@@ -141,13 +141,21 @@ class ChromaKnowledgeStore:
         return int(self.collection.count())
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
+        embeddings = []
+        batch_size = max(1, self.settings.embedding_batch_size)
+        for start in range(0, len(texts), batch_size):
+            embeddings.extend(self._embed_batch(texts[start:start + batch_size]))
+        return embeddings
+
+    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         payload = {
             "model": self.settings.openai_embedding_model,
             "input": [text if text.strip() else " " for text in texts],
+            "encoding_format": "float",
         }
         headers = {"Authorization": f"Bearer {self.settings.openai_api_key}"}
         response = httpx.post(
-            f"{self.settings.openai_base_url}/embeddings",
+            f"{self.settings.openai_base_url.rstrip('/')}/embeddings",
             headers=headers,
             json=payload,
             timeout=self.settings.embedding_timeout_seconds,

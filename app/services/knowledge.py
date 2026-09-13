@@ -38,6 +38,7 @@ class KnowledgeService:
         self.db = db
         self.settings = settings
         self.vector_store = ChromaKnowledgeStore(settings)
+        self.model_rerank_calls = 0
 
     def count(self) -> int:
         return self.db.query(KnowledgeChunk).count()
@@ -57,6 +58,11 @@ class KnowledgeService:
 
     def status(self) -> dict:
         vector_chunks = None
+        rerank_label = (
+            f"model reranker ({self.settings.rerank_model})"
+            if self.settings.knowledge_rerank_provider == "dashscope" else "local reranker"
+        ) if self.settings.knowledge_rerank_enabled else "no reranker"
+        primary_label = f"Chroma vector + BM25 hybrid + {rerank_label}"
         vector_error = getattr(self.vector_store, "error", "")
         if self.vector_store.can_embed:
             try:
@@ -65,10 +71,10 @@ class KnowledgeService:
                 vector_error = f"{type(exc).__name__}: {exc}"
         return {
             "retrievalOrder": [
-                PRIMARY_RETRIEVAL_LABEL,
+                primary_label,
                 f"{FALLBACK_RETRIEVAL_LABEL} when OPENAI_API_KEY/chromadb/vector call is unavailable",
             ],
-            "primaryRetrieval": PRIMARY_RETRIEVAL_LABEL,
+            "primaryRetrieval": primary_label,
             "fallbackRetrieval": FALLBACK_RETRIEVAL_LABEL,
             "databaseChunks": self.count(),
             "vectorEnabled": self.settings.knowledge_vector_enabled,
@@ -83,6 +89,9 @@ class KnowledgeService:
             "hybridVectorWeight": self.settings.knowledge_hybrid_vector_weight,
             "hybridBm25Weight": self.settings.knowledge_hybrid_bm25_weight,
             "rerankEnabled": self.settings.knowledge_rerank_enabled,
+            "rerankProvider": self.settings.knowledge_rerank_provider,
+            "rerankModel": self.settings.rerank_model if self.settings.knowledge_rerank_provider == "dashscope" else None,
+            "modelRerankCalls": self.model_rerank_calls,
             "vectorError": vector_error,
         }
 
@@ -194,6 +203,14 @@ class KnowledgeService:
     def _rerank(self, query: str, candidates: list[SearchResult], top_k: int) -> list[SearchResult]:
         if not self.settings.knowledge_rerank_enabled:
             return candidates[:top_k]
+        if self.settings.knowledge_rerank_provider == "dashscope":
+            from app.services.reranker import rerank_documents
+            ranked = rerank_documents(self.settings, query, [item.content for item in candidates], top_k)
+            if candidates:
+                self.model_rerank_calls += 1
+            return [replace_score(candidates[index], score) for index, score in ranked]
+        if self.settings.knowledge_rerank_provider != "local":
+            raise ValueError("Unknown knowledge_rerank_provider")
         reranked = [
             replace_score(item, rerank_score(query, item.content, item.score))
             for item in candidates

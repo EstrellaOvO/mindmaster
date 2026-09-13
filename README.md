@@ -157,6 +157,39 @@ curl -u admin:admin123 -X POST http://127.0.0.1:8080/api/admin/knowledge/backup
 
 当 `KNOWLEDGE_VECTOR_REQUIRED=false` 时，如果 Chroma 或 embedding 服务不可用，系统会降级到本地 BM25 + 词面 rerank；设为 `true` 则启动或检索失败时直接暴露错误。
 
+## 百炼向量服务与模型重排
+
+已有的向量 + BM25 混合检索现在支持接入百炼 Embedding，并可使用模型重排替代本地规则重排。
+在本地 `.env` 中配置以下参数，密钥不要提交到 GitHub：
+
+```env
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENAI_API_KEY=你的百炼_API_Key
+OPENAI_EMBEDDING_MODEL=qwen3.7-text-embedding
+EMBEDDING_BATCH_SIZE=20
+KNOWLEDGE_VECTOR_ENABLED=true
+KNOWLEDGE_VECTOR_REQUIRED=true
+KNOWLEDGE_HYBRID_VECTOR_WEIGHT=0.65
+KNOWLEDGE_HYBRID_BM25_WEIGHT=0.35
+KNOWLEDGE_CANDIDATE_K=16
+KNOWLEDGE_TOP_K=4
+KNOWLEDGE_RERANK_ENABLED=true
+KNOWLEDGE_RERANK_PROVIDER=dashscope
+RERANK_MODEL=qwen3.7-text-rerank
+RERANK_URL=https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+RERANK_TIMEOUT_SECONDS=60
+CHROMA_COLLECTION_NAME=mindmaster_qwen37
+CHROMA_PERSIST_DIR=data/chroma/qwen37
+```
+
+向量与 BM25 分别召回候选，按权重融合后取 16 个候选分块，由排序模型评分并返回前 4 个。
+Embedding 请求按批发送；返回向量数量异常时失败。排序响应中的数量、索引、重复索引或非有限分数异常时也直接失败，
+不静默回退成本地规则。`KNOWLEDGE_RERANK_PROVIDER=local` 可保留原来的本地规则重排。
+更换 Embedding 模型时使用新的向量集合，并通过管理员重建接口刷新索引；不要复用其他模型的向量。
+其他百炼地域或业务空间应使用对应接口地址及密钥。该配置与聊天模型提供方独立，聊天仍可使用 Ollama。
+`/api/admin/knowledge/status` 会显示重排提供方及模型；`modelRerankCalls` 为当前知识服务实例的成功调用次数。
+当前 Chroma 版本使用 `numpy<2` 保持依赖兼容。
+
 ## 工具队列、限流与死信
 
 心理报告生成后，工具链不会阻塞学生端流式回复，而是写入 `tool_jobs` 队列表：

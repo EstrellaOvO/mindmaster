@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     knowledge_hybrid_vector_weight: float = 0.65
     knowledge_hybrid_bm25_weight: float = 0.35
     knowledge_rerank_enabled: bool = True
+    knowledge_rerank_provider: str = "local"
+    rerank_model: str = "qwen3.7-text-rerank"
+    rerank_url: str = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+    rerank_timeout_seconds: float = 60.0
     knowledge_vector_enabled: bool = True
     knowledge_vector_required: bool = False
     chroma_persist_dir: str = "data/chroma"
@@ -55,6 +59,7 @@ class Settings(BaseSettings):
     chroma_snapshot_dir: str = "data/chroma-snapshots"
     chroma_snapshot_keep: int = 5
     embedding_timeout_seconds: float = 30.0
+    embedding_batch_size: int = 20
     rag_eval_dataset: str = "app/rag_eval/mindmaster-rag-eval.json"
     rag_eval_output: str = "target/rag-eval-report.json"
     rag_eval_enabled: bool = False
